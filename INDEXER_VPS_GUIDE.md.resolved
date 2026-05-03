@@ -1,0 +1,210 @@
+# Quanta Indexer — VPS Setup & Run Guide
+
+Ubuntu 22.04 · Rust · MongoDB
+
+---
+
+## 1. Prerequisites
+
+### Install Rust (if not already)
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustc --version   # should print 1.75+
+```
+
+### Install MongoDB
+```bash
+# Import MongoDB GPG key
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+  sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+
+# Add repo
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] \
+  https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+  sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+sudo apt update
+sudo apt install -y mongodb-org
+
+# Start and enable
+sudo systemctl start mongod
+sudo systemctl enable mongod
+
+# Verify it's running
+sudo systemctl status mongod
+```
+
+---
+
+## 2. Clone & Configure
+
+```bash
+git clone https://github.com/quantachain/quanta-indexer.git ~/quanta-indexer
+cd ~/quanta-indexer
+```
+
+### Edit the `.env` file
+
+```bash
+nano .env
+```
+
+Set these values:
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/quanta
+RPC_URL=https://rpc.quantachain.org
+```
+
+> **If running a local Quanta node on the same VPS**, change `RPC_URL`:
+> ```
+> RPC_URL=http://127.0.0.1:3000
+> ```
+
+---
+
+## 3. Build
+
+```bash
+cd ~/quanta-indexer
+cargo build --release
+```
+
+Expected finish:
+```
+Finished release [optimized] target(s) in ...
+```
+
+---
+
+## 4. Run
+
+### Option A — Foreground (test first)
+```bash
+cargo run --release
+```
+
+Expected output:
+```
+MongoDB indexes configured.
+Starting Quanta background indexer...
+Indexed block 10 / 3842
+Indexed block 20 / 3842
+...
+```
+
+---
+
+### Option B — Background with `screen` (recommended)
+
+```bash
+sudo apt install -y screen
+
+screen -S quanta-indexer
+
+# Inside screen:
+cd ~/quanta-indexer
+cargo run --release
+
+# Detach: Ctrl+A then D
+# Reattach later:
+screen -r quanta-indexer
+```
+
+---
+
+### Option C — Background with `nohup`
+
+```bash
+cd ~/quanta-indexer
+nohup cargo run --release > indexer.log 2>&1 &
+
+tail -f indexer.log
+```
+
+---
+
+## 5. Verify Indexing
+
+```bash
+mongosh
+```
+
+```js
+use quanta
+
+// How many blocks indexed?
+db.blocks.countDocuments()
+
+// Latest block indexed
+db.blocks.findOne({}, { sort: { index: -1 } })
+
+// How many transactions?
+db.transactions.countDocuments()
+
+// Current sync cursor
+db.indexerstates.findOne({ key: "last_indexed_block" })
+
+// Sample a transfer
+db.transactions.findOne({ tx_type: "TRANSFER" })
+
+// Sample a coinbase (mining reward)
+db.transactions.findOne({ tx_type: "COINBASE" })
+```
+
+### What healthy output looks like
+
+```js
+// Sync cursor — value should increase every ~10s
+{ key: "last_indexed_block", value: Long("3842") }
+
+// Block count should match chain height
+db.blocks.countDocuments()  // => 3843
+```
+
+---
+
+## 6. Update After Code Changes
+
+```bash
+cd ~/quanta-indexer
+git pull origin main
+cargo build --release
+# Restart via screen or nohup
+```
+
+---
+
+## 7. Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `Connection refused (os error 111)` | MongoDB not running — `sudo systemctl start mongod` |
+| `Error` on RPC_URL | Test: `curl https://rpc.quantachain.org/api/stats` — should return JSON with `chain_length` |
+| Indexer not advancing | Check log for errors; verify `db.indexerstates` value is incrementing |
+| Duplicate key errors | Safe to ignore — handled gracefully, won't corrupt data |
+
+### Reset and re-index from scratch
+
+```bash
+mongosh --eval 'use quanta; db.blocks.drop(); db.transactions.drop(); db.indexerstates.drop()'
+# Restart indexer — it starts from block 0
+```
+
+---
+
+## 8. MongoDB Collections Created
+
+| Collection | Contents |
+|---|---|
+| `blocks` | One doc per block (hash, height, timestamp, txCount, miner) |
+| `transactions` | One doc per tx (sender, recipient, amount, fee, txHash, type) |
+| `indexerstates` | Single doc tracking the `last_indexed_block` cursor |
+
+### Auto-created indexes
+- `blocks.index` — unique, descending
+- `blocks.hash` — ascending
+- `transactions.txHash` — unique
+- `transactions.sender` / `recipient` — ascending
+- `transactions.blockHeight` — descending

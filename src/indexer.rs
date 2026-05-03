@@ -138,7 +138,7 @@ impl Indexer {
                     .unwrap_or("")
                     .to_string();
 
-                let is_coinbase = sender == "0000000000000000000000000000000000000000000000000000000000000000";
+                let is_coinbase = sender == "COINBASE" || sender == "0000000000000000000000000000000000000000000000000000000000000000";
                 if is_coinbase && miner == "Unknown" {
                     miner = recipient.clone();
                 }
@@ -148,9 +148,13 @@ impl Indexer {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| {
-                        // Fallback hash: sha256(signature)
+                        // Fallback hash: sha256(signature) or sha256(coinbase_blockindex)
                         let mut hasher = Sha256::new();
-                        hasher.update(signature.as_bytes());
+                        if is_coinbase {
+                            hasher.update(format!("coinbase_{}_{}", block.index, recipient).as_bytes());
+                        } else {
+                            hasher.update(signature.as_bytes());
+                        }
                         hex::encode(hasher.finalize())
                     });
 
@@ -187,7 +191,8 @@ impl Indexer {
         // Insert transactions
         if !tx_docs.is_empty() {
             // we ignore duplicate errors (e.g. if we restarted halfway)
-            let _ = tx_col.insert_many(tx_docs, None).await;
+            let options = mongodb::options::InsertManyOptions::builder().ordered(false).build();
+            let _ = tx_col.insert_many(tx_docs, Some(options)).await;
         }
 
         Ok(())
