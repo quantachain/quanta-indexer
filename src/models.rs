@@ -8,7 +8,7 @@ pub struct TransactionDocument {
     #[serde(rename = "blockHeight")]
     pub block_height: u64,
     #[serde(rename = "blockTime")]
-    pub block_time: u64,
+    pub block_time: i64,
     pub sender: String,
     pub recipient: String,
     #[serde(rename = "amountMicrounits")]
@@ -22,20 +22,27 @@ pub struct TransactionDocument {
     pub tx_type: String,
 }
 
+/// V2 BFT block document stored in MongoDB.
+/// Replaces PoW fields (difficulty, nonce, miner) with BFT fields.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BlockDocument {
     pub index: u64,
     pub hash: String,
     #[serde(rename = "previousHash")]
     pub previous_hash: String,
-    pub timestamp: u64,
-    pub difficulty: u64,
-    pub nonce: u64,
+    pub timestamp: i64,
+    /// BFT epoch this block belongs to.
+    pub epoch: u64,
+    /// Tendermint voting round in which 2/3+ agreement was reached.
+    #[serde(rename = "bftRound")]
+    pub bft_round: u32,
+    /// Address of the validator that proposed this block.
+    pub proposer: String,
+    /// Number of BFT validators that signed this block.
+    #[serde(rename = "sigCount")]
+    pub sig_count: usize,
     #[serde(rename = "txCount")]
     pub tx_count: u64,
-    pub miner: String,
-    // We'll store transactions as raw JSON/Bson within the block to match Next.js schema,
-    // but we can map it to `serde_json::Value` or our own struct.
     pub transactions: Vec<serde_json::Value>,
 }
 
@@ -47,12 +54,12 @@ pub struct IndexerStateDocument {
     pub value: i64,
 }
 
-// Data structures from Node API
+// ── Data structures from the Node API ─────────────────────────────────────────
+
 #[derive(Debug, Deserialize)]
 pub struct NodeStats {
     pub chain_length: u64,
     pub total_transactions: u64,
-    pub current_difficulty: u64,
     pub pending_transactions: u64,
 }
 
@@ -67,13 +74,17 @@ pub struct NodeTransaction {
     pub public_key: String,
 }
 
+/// V2 BFT block as returned by GET /api/block/:height
 #[derive(Debug, Deserialize)]
 pub struct NodeBlock {
     pub index: u64,
-    pub timestamp: u64,
+    pub timestamp: i64,
     pub transactions: Vec<serde_json::Value>,
-    pub nonce: u64,
     pub previous_hash: String,
     pub hash: String,
-    pub difficulty: u64,
+    // BFT fields
+    pub epoch: u64,
+    pub bft_round: u32,
+    pub proposer: String,
+    pub bft_signatures: Vec<serde_json::Value>,
 }

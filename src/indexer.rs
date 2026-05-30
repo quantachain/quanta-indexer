@@ -110,7 +110,6 @@ impl Indexer {
         let block_col: Collection<BlockDocument> = self.db.collection("blocks");
         let tx_col: Collection<TransactionDocument> = self.db.collection("transactions");
 
-        let mut miner = "Unknown".to_string();
         let mut tx_docs = Vec::new();
 
         for tx_val in &block.transactions {
@@ -138,20 +137,19 @@ impl Indexer {
                     .unwrap_or("")
                     .to_string();
 
-                let is_coinbase = sender == "COINBASE" || sender == "0000000000000000000000000000000000000000000000000000000000000000";
-                if is_coinbase && miner == "Unknown" {
-                    miner = recipient.clone();
-                }
+                let is_coinbase = sender == "COINBASE"
+                    || sender == "0000000000000000000000000000000000000000000000000000000000000000";
 
                 let tx_hash = tx_obj
                     .get("tx_hash")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| {
-                        // Fallback hash: sha256(signature) or sha256(coinbase_blockindex)
                         let mut hasher = Sha256::new();
                         if is_coinbase {
-                            hasher.update(format!("coinbase_{}_{}", block.index, recipient).as_bytes());
+                            hasher.update(
+                                format!("coinbase_{}_{}", block.index, recipient).as_bytes(),
+                            );
                         } else {
                             hasher.update(signature.as_bytes());
                         }
@@ -168,30 +166,37 @@ impl Indexer {
                     fee_microunits: fee,
                     signature,
                     public_key: pub_key,
-                    tx_type: if is_coinbase { "COINBASE".to_string() } else { "TRANSFER".to_string() },
+                    tx_type: if is_coinbase {
+                        "COINBASE".to_string()
+                    } else {
+                        "TRANSFER".to_string()
+                    },
                 });
             }
         }
 
+        // V2 BFT: proposer is an explicit field on the block — no coinbase scan needed
         let block_doc = BlockDocument {
             index: block.index,
             hash: block.hash,
             previous_hash: block.previous_hash,
             timestamp: block.timestamp,
-            difficulty: block.difficulty,
-            nonce: block.nonce,
+            epoch: block.epoch,
+            bft_round: block.bft_round,
+            proposer: block.proposer,
+            sig_count: block.bft_signatures.len(),
             tx_count: block.transactions.len() as u64,
-            miner,
             transactions: block.transactions,
         };
 
-        // Insert block
-        block_col.insert_one(block_doc, None).await?;
+        // Insert block (ignore duplicate on restart)
+        let _ = block_col.insert_one(block_doc, None).await;
 
         // Insert transactions
         if !tx_docs.is_empty() {
-            // we ignore duplicate errors (e.g. if we restarted halfway)
-            let options = mongodb::options::InsertManyOptions::builder().ordered(false).build();
+            let options = mongodb::options::InsertManyOptions::builder()
+                .ordered(false)
+                .build();
             let _ = tx_col.insert_many(tx_docs, Some(options)).await;
         }
 
