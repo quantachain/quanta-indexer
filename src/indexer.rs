@@ -126,16 +126,22 @@ impl Indexer {
                     .to_string();
                 let amount = tx_obj.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
                 let fee = tx_obj.get("fee").and_then(|v| v.as_u64()).unwrap_or(0);
-                let signature = tx_obj
-                    .get("signature")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let pub_key = tx_obj
-                    .get("public_key")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let signature = tx_obj.get("signature").map(|v| {
+                    if let Some(arr) = v.as_array() {
+                        let bytes: Vec<u8> = arr.iter().filter_map(|num| num.as_u64().map(|n| n as u8)).collect();
+                        hex::encode(bytes)
+                    } else {
+                        v.as_str().unwrap_or("").to_string()
+                    }
+                }).unwrap_or_default();
+                let pub_key = tx_obj.get("public_key").map(|v| {
+                    if let Some(arr) = v.as_array() {
+                        let bytes: Vec<u8> = arr.iter().filter_map(|num| num.as_u64().map(|n| n as u8)).collect();
+                        hex::encode(bytes)
+                    } else {
+                        v.as_str().unwrap_or("").to_string()
+                    }
+                }).unwrap_or_default();
 
                 let is_coinbase = sender == "COINBASE"
                     || sender == "0000000000000000000000000000000000000000000000000000000000000000";
