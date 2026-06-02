@@ -113,7 +113,14 @@ impl Indexer {
         let mut tx_docs = Vec::new();
 
         for tx_val in &block.transactions {
-            if let Some(tx_obj) = tx_val.as_object() {
+            if let Some(mut tx_obj) = tx_val.as_object() {
+                // Unwrap V2_Falcon512 or V1_Ed25519 wrapper if present
+                if let Some(inner) = tx_obj.get("V2_Falcon512").or_else(|| tx_obj.get("V1_Ed25519")) {
+                    if let Some(inner_obj) = inner.as_object() {
+                        tx_obj = inner_obj;
+                    }
+                }
+
                 let sender = tx_obj
                     .get("sender")
                     .and_then(|v| v.as_str())
@@ -121,6 +128,7 @@ impl Indexer {
                     .to_string();
                 let recipient = tx_obj
                     .get("recipient")
+                    .or_else(|| tx_obj.get("receiver")) // handle both names
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
