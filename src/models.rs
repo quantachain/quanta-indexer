@@ -56,6 +56,7 @@ pub struct IndexerStateDocument {
 
 // ── Data structures from the Node API ─────────────────────────────────────────
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NodeStats {
     pub chain_length: u64,
@@ -63,6 +64,7 @@ pub struct NodeStats {
     pub pending_transactions: u64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct NodeTransaction {
     pub sender: String,

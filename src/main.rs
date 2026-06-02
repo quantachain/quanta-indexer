@@ -40,7 +40,15 @@ async fn setup_indexes(db: &mongodb::Database) -> Result<(), Box<dyn std::error:
         .keys(doc! { "index": -1 })
         .options(mongodb::options::IndexOptions::builder().unique(true).build())
         .build();
-    blocks.create_index(index_model, None).await?;
+    if let Err(e) = blocks.create_index(index_model.clone(), None).await {
+        if e.to_string().contains("IndexKeySpecsConflict") {
+            println!("Detected index conflict. Dropping old 'index_-1' index and recreating as unique...");
+            let _ = blocks.drop_index("index_-1", None).await;
+            blocks.create_index(index_model, None).await?;
+        } else {
+            return Err(e.into());
+        }
+    }
 
     let index_model2 = IndexModel::builder().keys(doc! { "hash": 1 }).build();
     blocks.create_index(index_model2, None).await?;
