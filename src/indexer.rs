@@ -151,7 +151,8 @@ impl Indexer {
                     }
                 }).unwrap_or_default();
 
-                let is_coinbase = sender == "COINBASE"
+                let is_system = sender == "COINBASE"
+                    || sender == "TREASURY"
                     || sender == "0000000000000000000000000000000000000000000000000000000000000000";
 
                 let tx_hash = tx_obj
@@ -160,9 +161,9 @@ impl Indexer {
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| {
                         let mut hasher = Sha256::new();
-                        if is_coinbase {
+                        if is_system {
                             hasher.update(
-                                format!("coinbase_{}_{}", block.index, recipient).as_bytes(),
+                                format!("{}_{}_{}", sender.to_lowercase(), block.index, recipient).as_bytes(),
                             );
                         } else {
                             hasher.update(signature.as_bytes());
@@ -174,14 +175,14 @@ impl Indexer {
                     tx_hash,
                     block_height: block.index,
                     block_time: block.timestamp,
-                    sender,
+                    sender: sender.clone(),
                     recipient,
                     amount_microunits: amount,
                     fee_microunits: fee,
                     signature,
                     public_key: pub_key,
-                    tx_type: if is_coinbase {
-                        "COINBASE".to_string()
+                    tx_type: if is_system {
+                        sender.clone()
                     } else {
                         "TRANSFER".to_string()
                     },
