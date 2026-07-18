@@ -114,6 +114,12 @@ impl Indexer {
 
         for tx_val in &block.transactions {
             if let Some(mut tx_obj) = tx_val.as_object() {
+                // Extract tx_hash from the top level BEFORE unwrapping the V2_Falcon512 enum
+                let tx_hash = tx_obj
+                    .get("tx_hash")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
                 // Unwrap V2_Falcon512 or V1_Ed25519 wrapper if present
                 if let Some(inner) = tx_obj.get("V2_Falcon512").or_else(|| tx_obj.get("V1_Ed25519")) {
                     if let Some(inner_obj) = inner.as_object() {
@@ -155,24 +161,20 @@ impl Indexer {
                     || sender == "TREASURY"
                     || sender == "0000000000000000000000000000000000000000000000000000000000000000";
 
-                let tx_hash = tx_obj
-                    .get("tx_hash")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| {
-                        let mut hasher = Sha256::new();
-                        if is_system {
-                            hasher.update(
-                                format!("{}_{}_{}", sender.to_lowercase(), block.index, recipient).as_bytes(),
-                            );
-                        } else {
-                            hasher.update(signature.as_bytes());
-                        }
-                        hex::encode(hasher.finalize())
-                    });
+                let final_tx_hash = tx_hash.unwrap_or_else(|| {
+                    let mut hasher = Sha256::new();
+                    if is_system {
+                        hasher.update(
+                            format!("{}_{}_{}", sender.to_lowercase(), block.index, recipient).as_bytes(),
+                        );
+                    } else {
+                        hasher.update(signature.as_bytes());
+                    }
+                    hex::encode(hasher.finalize())
+                });
 
                 tx_docs.push(TransactionDocument {
-                    tx_hash,
+                    tx_hash: final_tx_hash,
                     block_height: block.index,
                     block_time: block.timestamp,
                     sender: sender.clone(),
