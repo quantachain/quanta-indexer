@@ -44,6 +44,8 @@ pub struct BlockDocument {
     #[serde(rename = "txCount")]
     pub tx_count: u64,
     pub transactions: Vec<serde_json::Value>,
+    #[serde(rename = "bftSigners")]
+    pub bft_signers: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -89,4 +91,6 @@ pub struct NodeBlock {
     pub bft_round: u32,
     pub proposer: String,
     pub bft_signatures: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub bft_signers: Vec<String>,
 }

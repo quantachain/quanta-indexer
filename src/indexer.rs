@@ -204,6 +204,7 @@ impl Indexer {
             sig_count: block.bft_signatures.len(),
             tx_count: block.transactions.len() as u64,
             transactions: block.transactions,
+            bft_signers: block.bft_signers,
         };
 
         // Insert block (ignore duplicate on restart)
